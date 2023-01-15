@@ -1,0 +1,169 @@
+---
+title: "HW 3"
+author: "Xiaoting Chen"
+output:
+  pdf_document: default
+  html_document:
+    number_sections: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warnings = FALSE, fig.align = 'center',  eval = TRUE)
+```
+
+We will be predicting whether the housing price is expensive or not using the `sahp` dataset in the **r02pro** package. 
+
+You can run the following code to prepare the analysis.
+```{r, message=FALSE, warning=FALSE}
+library(r02pro)     #INSTALL IF NECESSARY
+library(tidyverse)  #INSTALL IF NECESSARY
+library(MASS)
+library(ggplot2)
+library(pROC)
+library(caret)
+my_sahp <- sahp %>% 
+  na.omit() %>%
+  mutate(expensive = sale_price > median(sale_price)) %>%
+  dplyr::select(gar_car, liv_area, oa_qual, expensive) 
+my_sahp$expensive <- as.factor(my_sahp$expensive)
+my_sahp_train <- my_sahp[1:100, ]
+my_sahp_test <- my_sahp[-(1:100), ]
+```
+
+Please answer the following questions.
+
+## 1. Use the training data `my_sahp_train` to fit a KNN model of `expensive` on variables `gar_car` and `liv_area`.  
+
+a. Vary the nearest number $K$ from 1 to 100 with increment 5. For each $K$, fit the KNN classification model on the training data, and predict on the test data. Visualize the training and test error trend as a function of $K$. Discuss your findings.
+
+```{r Q1.a}
+# KNN model
+k_seq <- seq(1, 100, by = 5)
+train_error_seq <- test_error_seq <- NULL
+for(k_ind in seq_along(k_seq)){
+ k <- k_seq[k_ind]
+ fit_knn <- knn3(expensive ~ gar_car + liv_area, data = my_sahp_train, k = k)
+ pred_knn <- predict(fit_knn, newdata = my_sahp_train, type = "class")
+ train_error_seq[k_ind] <- mean(pred_knn != my_sahp_train$expensive)
+ pred_knn <- predict(fit_knn, newdata = my_sahp_test, type = "class")
+ test_error_seq[k_ind] <- mean(pred_knn != my_sahp_test$expensive)
+}
+knn_re <- rbind(data.frame(K = k_seq, error = train_error_seq, type = "train"),
+                data.frame(K = k_seq, error = test_error_seq, type = "test"))
+
+# plot
+ggplot(knn_re, mapping = aes(x = K, y = error, color = type)) +
+  geom_point(size = 2) +
+  geom_line(size = 2)
+```
+findings:
+
+When k is very small (k < 10) or very large (k > 81), the test error of the KNN model are larger than training error; when k is between the range from 10 to 81, we have a smaller test error than training error. The smallest test error is given when k = 26.
+
+
+b. First, standardize `gar_car` and `liv_area`. Then, repeat the task in a, and visualize the training and test error together with the unstandarized version as a function of $K$.
+
+```{r Q1.b}
+# data prep
+fit_std <- preProcess(my_sahp_train, method = "scale")
+train_dat_std <- predict(fit_std, newdata = my_sahp_train)
+test_dat_std <- predict(fit_std, newdata = my_sahp_test)
+
+# KNN model
+k_seq <- seq(1, 100, by = 5)
+train_error_seq <- test_error_seq <- NULL
+for(k_ind in seq_along(k_seq)){
+ k <- k_seq[k_ind]
+ fit_knn <- knn3(expensive ~ gar_car + liv_area, data = train_dat_std, k = k)
+ pred_knn <- predict(fit_knn, newdata = train_dat_std, type = "class")
+ train_error_seq[k_ind] <- mean(pred_knn != train_dat_std$expensive)
+ pred_knn <- predict(fit_knn, newdata = test_dat_std, type = "class")
+ test_error_seq[k_ind] <- mean(pred_knn != test_dat_std$expensive)
+}   
+knn_re_std <- rbind(data.frame(K = k_seq, error = train_error_seq, type = "train_std"),
+                data.frame(K = k_seq, error = test_error_seq, type = "test_std"))
+
+# plot
+ggplot(knn_re_std, mapping = aes(x = K, y = error, color = type)) +
+  geom_point(size = 2) +
+  geom_line(size = 2) +
+  ggtitle("Training and Test Errors after Standardization")
+
+dta <- rbind(knn_re, knn_re_std)
+ggplot(dta, mapping = aes(x = K, y = error, color = type)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  ggtitle("Training and Test Errors for Standardized and Unstandardized Data")
+```
+
+## 2. Use the data `my_sahp` (without standardization) to fit four models of `expensive` on variables `gar_car` and `liv_area`, using Logistic regression, LDA, QDA, and KNN (with $K = 7$). Visualize the ROC curves for them and add the AUC values to the legend. Discuss your findings.
+
+```{r Q2, message=FALSE, warning=FALSE}
+# build models
+glm.fit <- glm(expensive ~ gar_car + liv_area, data = my_sahp_train, family = "binomial")
+glm.pred <- predict(glm.fit, newdata = my_sahp_test, type = "response")
+rocobj_glm <- roc(my_sahp_test$expensive, glm.pred)
+auc_glm <- auc(rocobj_glm)
+
+lda.fit <- lda(expensive ~ gar_car + liv_area, data = my_sahp_train)
+lda.pred <- predict(lda.fit, newdata = my_sahp_test)$posterior[ , 2]
+rocobj_lda <- roc(my_sahp_test$expensive, lda.pred)
+auc_lda <- auc(rocobj_lda)
+
+qda.fit <- qda(expensive ~ gar_car + liv_area, data = my_sahp_train)
+qda.pred <- predict(qda.fit, newdata = my_sahp_test)$posterior[ , 2]
+rocobj_qda <- roc(my_sahp_test$expensive, qda.pred)
+auc_qda <- auc(rocobj_qda)
+
+knn.fit <- knn3(expensive ~ gar_car + liv_area, data = my_sahp_train, k = 7, prob = TRUE)
+knn.pred <- predict(knn.fit, newdata = my_sahp_test, type = "prob")
+rocobj_knn <- roc(my_sahp_test$expensive, knn.pred[ ,2])
+auc_knn <- auc(rocobj_knn)
+
+rocobjs <- list(Logistic = rocobj_glm, LDA = rocobj_lda, QDA = rocobj_qda, KNN = rocobj_knn)
+methods_auc <- paste(c("Logistic", "LDA", "QDA","KNN"),
+                     "AUC = ", 
+                     round(c(auc_glm, auc_lda, auc_qda, auc_knn),3))
+ggroc(rocobjs, size = 1, alpha = 0.8) + 
+  scale_color_discrete(labels = methods_auc)
+```
+findings:
+
+In this case, the LDA model has a better overall performance than other models, outputting results with high specificity, sensitivity, and AUC. The logistic regression model also has a good performance, and its curve mostly coincides the LDA ROC curve. Compared to other models, the KNN model (k = 7) does not perform well enough.
+
+
+## 3. When the number of features p is large, there tends to be a deterioration in the performance of KNN and other local approaches that perform prediction using only observations that are near the test observation for which a prediction must be made. This phenomenon is known as the curse of dimensionality, and it ties into the fact that non-parametric approaches often perform poorly when p is large. We will now investigate this curse.
+
+(a) Suppose that we have a set of observations, each with measurements on p = 1 feature, X. We assume that X is uniformly (evenly) distributed on [0, 1]. Associated with each observation is a response value. Suppose that we wish to predict a test observation’s response using only observations that are within 10 % of the range of X closest to that test observation. For instance, in order to predict the response for a test observation with X = 0.6, we will use observations in the range [0.55, 0.65]. On average, what fraction of the available observations will we use to make the prediction?
+
+Answer: On average, about 10% of the available observations will be used to make the prediction. Calculation sees the figure below.
+
+![](hw3_q3_a.jpg)
+
+(b) Now suppose that we have a set of observations, each with measurements on p = 2 features, X1 and X2. We assume that (X1, X2) are uniformly distributed on [0, 1] × [0, 1]. We wish to predict a test observation’s response using only observations that are within 10 % of the range of X1 and within 10 % of the range of X2 closest to that test observation. For instance, in order to predict the response for a test observation with X1 = 0.6 and X2 = 0.35, we will use observations in the range [0.55, 0.65] for X1 and in the range [0.3, 0.4] for X2. On average, what fraction of the available observations will we use to make the prediction?
+
+Answer: The two dimensions can be seen as independent from each other, so the expectation for two-dimension is the square of the one-dimension expectation. In other words, the fraction of the available observations be used to make the prediction is `r 0.1 ^ 2`.
+
+
+(c) Now suppose that we have a set of observations on p = 100 features. Again the observations are uniformly distributed on each feature, and again each feature ranges in value from 0 to 1. We wish to predict a test observation’s response using observations within the 10 % of each feature’s range that is closest to that test observation. What fraction of the available observations will we use to make the prediction?
+
+Answer: The logic for 100 dimensions is similar to the two-dimension situation, the fraction of the available observations be used to make the prediction is `r 0.1 ^ 100`.
+
+
+(d) Using your answers to parts (a)–(c), argue that a drawback of KNN when p is large is that there are very few training observations “near” any given test observation.
+
+As p increases, the fraction of data used for prediction decreases sharply exponentially. When p = 10, the average fraction of data that can be used is only 1%, which indicates that the criteria has become so strict that it is possible there is no data remained to be used. Not to mention when p becomes even larger.
+
+
+(e) Now suppose that we wish to make a prediction for a test observation by creating a p-dimensional hypercube centered around the test observation that contains, on average, 10 % of the training observations. For p = 1, 2, and 100, what is the length of each side of the hypercube? Comment on your answer
+
+The idea of this problem is the reverse of question (a)–(c).
+
+For p = 1, the length of each side of the hypercube is 0.1.
+
+For p = 2, the length of each side of the hypercube is `r round(0.1 ^ 0.5, 3)`.
+
+For p = 100, the length of each side of the hypercube is `r round(0.1 ^ 0.01, 3)`.
+

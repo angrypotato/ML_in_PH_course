@@ -1,0 +1,142 @@
+---
+title: "HW 1"
+author: "Xiaoting Chen"
+output:
+  html_document:
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warnings = FALSE, fig.align = 'center',  eval = TRUE)
+```
+
+We will be predicting the housing price using the `sahp` dataset in the **r02pro** package. Please answer the following questions.
+
+You can run the following code to prepare the analysis.
+```{r data prep, message=FALSE, warning=F}
+library(r02pro)     
+library(tidyverse)  
+library(caret)
+data(sahp)
+my_sahp <- sahp %>% 
+  na.omit() %>%
+  select(gar_car, liv_area, kit_qual, sale_price)
+my_sahp_train <- my_sahp[1:100, ]
+my_sahp_test <- my_sahp[-(1:100), ]
+```
+
+1. Using the training data `my_sahp_train` to fit a simple linear regression model of `sale_price` on each variable (`gar_car`, `liv_area`, `kit_qual`) separately. Here, please code `kit_qual` as dummy variables (R will do this automatically in `lm()`). For each regression,
+
+    a. Interpret the coefficients and compute the $R^2$. Which variable is most useful in predicting the `sale_price` on the training data?
+    b. Comput the fitted value for the training data and make prediction for the test data, then compute the training and test error. Which variable gives the smallest test error? Does this agree with the variable with the highest $R^2$? Explain your findings. 
+    
+    Note that, the training error is defined as 
+    $$\sum_{i \in Training} (Y_i - \hat Y_i)^2$$
+    and the test error is defined as 
+    $$\sum_{i \in Testing} (Y_i - \hat Y_i)^2$$
+    
+
+```{r Q1}
+result <- list(gar_car = NULL, liv_area = NULL, kit_qual = NULL)
+for(i in seq_along(my_sahp)[-4]){
+    fit <- lm(paste('sale_price', '~', names(my_sahp_train)[i]), data = my_sahp_train)
+    model <- summary(fit)
+    R2 <- summary(fit)$r.squared
+    test_predict <- predict(fit, data.frame(my_sahp_test[ , i]))
+    test_error <- sum((my_sahp_test$sale_price - test_predict)^2)
+    train_predict <- predict(fit, data.frame(my_sahp_train[ , i]))
+    train_error <- sum((my_sahp_train$sale_price - train_predict)^2)
+    result[[i]] <- list(model = model, R2 = R2, 
+                        test_predict = head(test_predict, 5), test_error = test_error,
+                        train_predict = head(train_predict, 5), train_error = train_error)
+    # the model summaries and predictions are stored in list "result"
+}
+
+result$gar_car
+# y_hat = 60.908 * gar_car + 69.515
+
+result$liv_area
+# y_hat = 0.11325 * liv_area + 8.89852 
+
+result$kit_qual
+# y_hat = 137.31 + 209.61 * kit_qualExcellent - 19.52 * kit_qualFair +  56.61 * kit_qualGood
+# kit_qualExcellent, kit_qualFair, and kit_qualGood are dummy variables with value equal to 1 or 0
+# y_hat equals to 137.31 when kit_qual is average
+
+tab <- matrix(c(result$gar_car$R2, result$gar_car$test_error, 
+                result$liv_area$R2, result$liv_area$test_error,
+                result$kit_qual$R2, result$kit_qual$test_error), 
+              ncol=2, byrow=TRUE)
+colnames(tab) <- c("R2", "Test error")
+rownames(tab) <- c("gar_car", "liv_area", "kit_qual")
+tab <- as.table(tab)
+tab
+```
+According to the R2 results, model of kit_qual has the highest R2, so kit_qual is most useful in predicting the sale_price on the training data.
+
+Liv_area gives the smallest test error, which is not in line with the R2 result. This suggests that a good performance with the training data does not always guarantee a good performance in test data.
+
+2. Using the training data `my_sahp_train` to fit a linear regression model of `sale_price` on all variables, interpret the coefficients and compute the $R^2$. Then compute the training and test error. Compare the results to Q1 and explain your findings.
+
+```{r Q2}
+fit_all <- lm(formula = sale_price ~ ., my_sahp_train)
+summary(fit_all)
+test_predict_all <- predict(fit_all, my_sahp_test)
+test_error_all <- sum((my_sahp_test$sale_price - test_predict_all)^2)
+train_predict_all <- predict(fit_all, my_sahp_train)
+train_error_all <- sum((my_sahp_train$sale_price - train_predict_all)^2)
+data.frame(R2 = summary(fit_all)$r.squared, train_error = train_error_all, test_error = test_error_all)
+```
+The model using all variables as predictors has a better performance than any single linear regression models in Q1, with higher R2 and lower train and test error. 
+
+
+3. Now, use the KNN method for predicting the `sale_price` using all predictors. Here, please code `kit_qual` as dummy variables (R will do this automatically in `knnreg()`). Also, please use the **formula format** for KNN regression. `knnreg(formula, data, k = 5)`. (See line 261-268 in the lab)
+    a. Vary the nearest number $K$ from 1 to 50 with increment 1. For each $K$, fit the KNN regression model on the training data, and predict on the test data. Visualize the training and test error trend as a function of $K$. Discuss your findings.
+    b. Compare the best KNN result with the linear regression result in Q2. Discuss your findings. 
+
+```{r Q3}
+k_seq <- seq(1, 50)
+test_error_seq <- train_error_seq <- vector("numeric", 50)
+for(k in seq_along(k_seq)){
+  fit <- knnreg(sale_price ~ gar_car + liv_area + kit_qual, 
+                k = k_seq[k], data = my_sahp_train)
+  y_test_hat <- predict(fit, my_sahp_test[-4])   
+  test_error_seq[k] <- sum((my_sahp_test[4] - y_test_hat)^2) 
+  y_train_hat <- predict(fit, my_sahp_train[-4])       
+  train_error_seq[k] <- sum((my_sahp_train[4] - y_train_hat)^2)   
+}
+knn_result <- data.frame(k = k_seq, train_error = train_error_seq, test_error = test_error_seq)
+knn_result
+
+colors <- c("training error" = "blue", "test error" = "red")
+ggplot(knn_result) +
+  geom_line(aes(x = k, y = train_error, color = "training error")) +
+  geom_line(aes(x = k, y = test_error, color = "test error")) +
+  ggtitle("Training and Test Error for KNN Model") +
+  labs(color = "legend") +
+  scale_color_manual(values = colors)
+```
+As K increases from 1 to 50, the training error keeps increasing, especially between 1 to 10 where a sharp increment is seen. However, test error drops to the minimum when k = 9 then bounces back.
+
+Compared with the result in Q2, even the best KNN model (when k = 9) has higher train and test error than the linear regression model. So the regression model is more suitable in this case.
+
+
+
+4. ISLR book 2nd Edition Chapter 3.7 Question 6
+
+$$
+\hat \beta_1 = \frac{\sum^n_{i=1}(x_i - \bar x)(y_i - \bar y)}{\sum^n_{i=1}(x_i - \bar x)^2}
+$$
+$$
+\hat \beta_0 = \bar y - \hat \beta_1 \bar x
+$$
+where $\bar y = \frac{1}{n}\sum^n_{i=1}y_i$ and $\bar x = \frac{1}{n}\sum^n_{i=1}x_i$
+
+Using (3.4 least squares coefficient estimates - see equations above), argue that in the case of simple linear regression, the least squares line always passes through the point $(\bar x, \bar y$).
+
+$$
+\bar x * \hat \beta_1 + \hat \beta_0 = \bar x  * \hat \beta_1 + \bar y - \hat \beta_1 * \bar x = \bar y
+$$
+When using the coefficients to predict y, if x = x_hat, the estimated y = y_hat, which means the least squares line always passes through the point $(\bar x, \bar y$).

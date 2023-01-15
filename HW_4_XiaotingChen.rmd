@@ -1,0 +1,250 @@
+---
+title: "HW 4"
+author: "Xiaoting Chen"
+output:
+  pdf_document: default
+  html_document:
+    number_sections: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warnings = FALSE, fig.align = 'center',  eval = TRUE)
+```
+
+You can run the following code to prepare the analysis.
+```{r, message=F, warning=FALSE}
+library(r02pro)     #INSTALL IF NECESSARY
+library(tidyverse)  #INSTALL IF NECESSARY
+library(MASS)
+library(caret)
+my_sahp <- sahp %>% 
+  na.omit() %>%
+  mutate(expensive = sale_price > median(sale_price)) %>%
+  dplyr::select(gar_car, liv_area, oa_qual, sale_price, 
+                expensive) 
+my_sahp$expensive <- as.factor(my_sahp$expensive)
+```
+
+Please answer the following questions.
+
+1. Use the training data `my_sahp` to fit the following four models of `sale_price`.
+- Model 1: linear model on variable `gar_car`.
+- Model 2: linear model on variables `gar_car` and `liv_area`.  
+- Model 3: KNN with $K=5$ on variables `gar_car` and `liv_area`. 
+- Model 4: KNN with $K=50$ on variables `gar_car` and `liv_area`. 
+
+a. Use the validation set approach to divide the data into training (50%) and validation. Compute the average validation error for each model and decide which model is the best.
+b. Use LOOCV approach to compute the CV error for each model and decide which model is the best.
+c. Use 5-fold CV approach to compute the CV error for each model and decide which model is the best.
+
+```{r Q1}
+# a. validation set approach
+n_all <- nrow(my_sahp)
+set.seed(0)
+tr_ind <- sample(n_all, round(n_all/2)) 
+sahp_tr <- my_sahp[tr_ind, ]
+sahp_val <- my_sahp[-tr_ind, ]
+
+mod.formula <- as.formula(sale_price ~ gar_car + liv_area) 
+lm_1 <- lm(sale_price ~ gar_car, data = sahp_tr)
+lm_2 <- lm(mod.formula, data = sahp_tr)
+knn_1 <- knnreg(mod.formula, data = sahp_tr, k = 5)
+knn_2 <- knnreg(mod.formula, data = sahp_tr, k = 50)
+vsa.mdl <- list(lm_1 = lm_1, lm_2 = lm_2, knn_1 = knn_1, knn_2 = knn_2)
+sapply(vsa.mdl, function(form) {
+  pred_val <- predict(form, newdata = sahp_val)
+  mean((sahp_val$sale_price - pred_val)^2)
+})
+# The linear regression model with gar_car and liv_area as predictors has the best performance.
+
+
+# b. LOOCV
+lm.formula <- c("sale_price ~ gar_car", "sale_price ~ gar_car + liv_area")
+lm.error <- sapply(lm.formula, function(form) {
+  mod <- as.formula(form)
+  error.seq <- sapply(1:nrow(my_sahp), function(j) {
+    fit <- lm(mod, data = my_sahp[-j, ])
+    pred <- predict(fit, newdata = my_sahp[j, ])
+    (my_sahp$sale_price[j] - pred)^2
+  })
+  mean(error.seq)
+})
+
+knn.error <- sapply(c(5, 50), function(k) {
+  error.seq <- sapply(1:nrow(my_sahp), function(j) {
+    fit <- knnreg(sale_price ~ gar_car + liv_area, data = my_sahp[-j, ], k = k)
+    pred <- predict(fit, newdata = my_sahp[j, ])
+    (my_sahp$sale_price[j] - pred)^2
+  })
+ mean(error.seq)
+})
+
+data.frame(model = c("lm_1", "lm_2", "knn_1", "knn_2"),
+           cv.error = c(lm.error, knn.error))
+# The linear regression model with gar_car and liv_area as predictors has the best performance.
+
+# c. 5-fold CV
+k <- 5
+set.seed(0)
+fold_ind <- sample(1:k, n_all, replace = T)
+
+lm.formula <- c("sale_price ~ gar_car", "sale_price ~ gar_car + liv_area")
+lm.error <- sapply(lm.formula, function(form) {
+  mod <- as.formula(form)
+  error.seq <- sapply(1:k, function(j) {
+    fit <- lm(mod, data = my_sahp[fold_ind != j, ])
+    pred <- predict(fit, newdata = my_sahp[fold_ind == j, ])
+    mean((my_sahp$sale_price[fold_ind == j] - pred)^2)
+  })
+  mean(error.seq)
+})
+
+knn.error <- sapply(c(5, 50), function(knn_k) {
+  error.seq <- sapply(1:k, function(j) {
+    fit <- knnreg(sale_price ~ gar_car + liv_area, data = my_sahp[fold_ind != j, ], k = knn_k)
+    pred <- predict(fit, newdata = my_sahp[fold_ind == j, ])
+    mean((my_sahp$sale_price[fold_ind == j] - pred)^2)
+  })
+ mean(error.seq)
+})
+
+data.frame(model = c("lm_1", "lm_2", "knn_1", "knn_2"),
+           cv.error = c(lm.error, knn.error))
+# The linear regression model with gar_car and liv_area as predictors has the best performance.
+```
+
+2. Use the data `my_sahp` to fit the following four models to predict `expensive`.
+- Model 1: logistic regression on variables `gar_car` and `liv_area`.  
+- Model 2: LDA on variables `gar_car` and `liv_area`.  
+- Model 3: QDA on variables `gar_car` and `liv_area`.  
+- Model 4: KNN with $K=20$ on variables `gar_car` and `liv_area`. 
+
+a. Use the validation set approach to divide the data into training (50%) and validation. Compute the average validation classification error for each model and decide which model is the best.
+b. Use LOOCV approach to compute the CV classification error for each model and decide which model is the best.
+c. Use 5-fold CV approach to compute the CV classification error for each model and decide which model is the best.
+
+```{r Q2}
+mod.formula <- as.formula(expensive ~ gar_car + liv_area) 
+
+# a. validation set approach
+n_all <- nrow(my_sahp)
+set.seed(0)
+tr_ind <- sample(n_all, round(n_all/2)) 
+sahp_tr <- my_sahp[tr_ind, ]
+sahp_val <- my_sahp[-tr_ind, ]
+
+vsa.mdl.1 <- glm(mod.formula, data = sahp_tr, family = "binomial")
+pred_val <- predict(vsa.mdl.1, newdata = sahp_val, type = "response")
+pred_label <- ifelse(pred_val > 0.5, "TRUE", "FALSE")
+glm.error <- mean(sahp_val$expensive != pred_label)
+
+vsa.mdl.2 <- lda(mod.formula, data = sahp_tr)
+pred_val <- predict(vsa.mdl.2, newdata = sahp_val)$class
+lda.error <- mean(sahp_val$expensive != pred_val)
+
+vsa.mdl.3 <- qda(mod.formula, data = sahp_tr)
+pred_val <- predict(vsa.mdl.3, newdata = sahp_val)$class
+qda.error <- mean(sahp_val$expensive != pred_val)
+
+vsa.mdl.4 <- knn3(mod.formula, data = sahp_tr, k = 20)
+pred_val <- predict(vsa.mdl.4, newdata = sahp_val)[ , 2]
+pred_label <- ifelse(pred_val > 0.5, "TRUE", "FALSE")
+knn.error <- mean(sahp_val$expensive != pred_label)
+
+data.frame(glm.error, lda.error, qda.error, knn.error)
+# The logistic regression model with gar_car and liv_area as predictors has the best performance.
+
+
+# b. LOOCV 
+cv.glm <- mean(sapply(1:nrow(my_sahp), function(j) {
+  fit <- glm(mod.formula, data = my_sahp[-j, ], family = "binomial")
+  pred <- predict(fit, newdata = my_sahp[j, ], type = "response")
+  pred_label <- ifelse(pred > 0.5, "TRUE", "FALSE")
+  my_sahp$expensive[j] != pred_label
+}))
+
+cv.lda <- mean(sapply(1:nrow(my_sahp), function(j) {
+  fit <- lda(mod.formula, data = my_sahp[-j, ])
+  pred <- predict(fit, newdata = my_sahp[j, ])$class
+  my_sahp$expensive[j] != pred
+}))
+
+cv.qda <- mean(sapply(1:nrow(my_sahp), function(j) {
+  fit <- qda(mod.formula, data = my_sahp[-j, ])
+  pred <- predict(fit, newdata = my_sahp[j, ])$class
+  my_sahp$expensive[j] != pred
+}))
+
+cv.knn <- mean(sapply(1:nrow(my_sahp), function(j) {
+  fit <- knn3(mod.formula, data = my_sahp[-j, ], k = 20)
+  pred <- predict(fit, newdata = my_sahp[j, ])[ , 2]
+  pred_label <- ifelse(pred > 0.5, "TRUE", "FALSE")
+  my_sahp$expensive[j] != pred_label
+}))
+
+data.frame(cv.glm, cv.lda, cv.qda, cv.knn)
+# The QDA model has the best performance.
+
+
+# c. 5-fold CV 
+k <- 5
+set.seed(0)
+fold_ind <- sample(1:k, n_all, replace = T)
+
+fold.cv.glm <- mean(sapply(1:k, function(j) {
+    fit <- glm(mod.formula, data = my_sahp[fold_ind != j, ], family = "binomial")
+    pred <- predict(fit, newdata = my_sahp[fold_ind == j, ], type = "response")
+    pred_label <- ifelse(pred > 0.5, "TRUE", "FALSE")
+    mean(my_sahp$expensive[fold_ind == j] != pred_label)
+  }))
+
+fold.cv.lda <- mean(sapply(1:k, function(j) {
+    fit <- lda(mod.formula, data = my_sahp[fold_ind != j, ])
+    pred <- predict(fit, newdata = my_sahp[fold_ind == j, ])$class
+    mean(my_sahp$expensive[fold_ind == j] != pred)
+  }))
+
+fold.cv.qda <- mean(sapply(1:k, function(j) {
+    fit <- qda(mod.formula, data = my_sahp[fold_ind != j, ])
+    pred <- predict(fit, newdata = my_sahp[fold_ind == j, ])$class
+    mean(my_sahp$expensive[fold_ind == j] != pred)
+  }))
+
+fold.cv.knn <- mean(sapply(1:k, function(j) {
+    fit <- knn3(mod.formula, data = my_sahp[fold_ind != j, ], k = 20)
+    pred <- predict(fit, newdata = my_sahp[fold_ind == j, ], type = "class")
+    mean(my_sahp$expensive[fold_ind == j] != pred)
+  }))
+
+data.frame(fold.cv.glm, fold.cv.lda, fold.cv.qda, fold.cv.knn)
+# The LDA model has the best performance.
+```
+
+
+
+3. Q2 from Chapter 5, Page 219, ISLRv2.
+
+a. The probability is `1-P(get j out of n obs.)`, which is $1-1/n$. \
+b. The bootstrap sampling is a method with replacement, so the drawings are independent from each other. So the answer for the second obs. is the same as the 1st, which is $1-1/n$. \
+c. Bootstrap sampling draws samples repeatedly, with replacement, from the original sample. So the probabilities of getting the same observation for each drawing is theoretically the same. Likewise for not drawing a certain observation. Hence, the drawings for the bootstrap sample should be considered independent from each other, and the probability that the jth observation is not in the bootstrap sample should be the power of the probability for each time, which is $(1-1/n)^n$ when the bootstrap sample size is n.\
+d. The probability that the jth observation is in the bootstrap sample when n=5 is equal to `1-P(j is not in the sample)`, which is $1-((5-1)/5)^5$ = `r 1-((5-1)/5)^5`.\
+e. The probability that the jth observation is in the bootstrap sample when n=100 is equal to `1-P(j is not in the sample)`, which is `r 1-((100-1)/100)^100`.\
+f. The probability that the jth observation is in the bootstrap sample when n=10000 is equal to `1-P(j is not in the sample)`, which is `r 1-((10000-1)/10000)^10000`.\
+g.
+```{r}
+my_fun <- function(n){1 - ((n-1)/n)^n}
+plot(my_fun, from = 1L, to = 100000L)
+```
+The probabilities that a certain observation is in the bootstrap sample are about the same no matter how the sample size changes. As n increases towards positive infinity, the result tends to be close to 0.632.\
+
+h. 
+```{r}
+store <- rep (NA, 10000)
+for (i in 1:10000){
+store[i] <- sum ( sample (1:100, rep =TRUE) == 4) > 0
+}
+mean (store)
+```
+The simulation process above is basically to draw bootstrap sample (n = 100) 10000 times, and calculate the proportion containing the 4th observation. The result approximates the theoretical result which is discussed in e.

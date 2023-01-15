@@ -1,0 +1,296 @@
+---
+title: "ML project"
+author: "Danning Tian  Xiaoting Chen"
+date: "2022/4/20"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+```
+
+```{r data.prep, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(caret)
+set.seed(0)
+
+dta <- read.csv("data.csv") %>%
+  dplyr::select(-c("id")) %>%
+  mutate(diagnosis = as.factor(diagnosis)) %>%
+  na.omit() %>%
+  distinct()
+
+tr_ind <- sample(nrow(dta), round(nrow(dta) * 0.7))
+cancer_tr <- dta[tr_ind, ] 
+cancer_te <- dta[-tr_ind, ]
+
+# test the equal proportions in train and test sets
+prop.test(x = c(length(cancer_tr$diagnosis[cancer_tr$diagnosis == "M"]), 
+                length(cancer_te$diagnosis[cancer_te$diagnosis == "M"])), 
+          n = c(nrow(cancer_tr), nrow(cancer_te)))
+
+str(cancer_tr)
+
+# data prep
+x_tr <- as.matrix(cancer_tr[ , -1])
+y_tr <- cancer_tr[, 1, drop = T]
+x_te <- as.matrix(cancer_te[, -1])
+y_te <- cancer_te[, 1, drop = T]
+```
+
+## logistic regression
+```{r logit, echo=FALSE}
+glm.mod <- glm(diagnosis ~ ., cancer_tr, family = "binomial")
+summary(glm.mod)
+
+pred_tr_prob_logit <- predict(glm.mod, type = "response")
+pred_tr_logit <- ifelse(pred_tr_prob_logit >= 0.5, "M", "B")
+logit.tr.error <- mean(pred_tr_logit != y_tr)
+logit.tr.error
+logit.tr.CM <- confusionMatrix(data=as.factor(pred_tr_logit), reference = y_tr, positive = "M")
+logit.tr.CM
+
+pred_te_prob_logit <- predict(glm.mod, newdata = cancer_te, type = "response")
+pred_te_logit <- ifelse(pred_te_prob_logit >= 0.5, "M", "B")
+logit.te.error <- mean(pred_te_logit != y_te)
+logit.te.error
+logit.te.CM <- confusionMatrix(data=as.factor(pred_te_logit), reference = y_te, positive = "M")
+logit.te.CM
+
+# diagnosis
+var <- cancer_tr[,-1]
+corMatrix <- cor(var) 
+corMatrix <- round(corMatrix,2) 
+
+x <- model.matrix(glm.mod)[,-1]
+e <- eigen(t(x) %*% x)
+e$val
+sqrt(e$val[1] / e$val)
+```
+
+## lasso
+```{r lasso, echo=FALSE}
+library(glmnet)
+library(plotmo)
+set.seed(0)
+
+# model result
+mod.lasso <- cv.glmnet(x = x_tr, y = y_tr, standardize = TRUE, 
+                       nfolds = 10, alpha=1, family="binomial")
+coef(mod.lasso)
+plot(mod.lasso, xvar="lambda")
+lambda_best <- mod.lasso$lambda.min
+fit.lasso <- glmnet(x = x_tr, y = y_tr, 
+                    standardize = TRUE, nfolds = 5, alpha=1, family="binomial")
+
+# model accuracy
+pred_tr_prob_lasso <- predict(fit.lasso, s = lambda_best, newx = x_tr, type = "response")
+pred_tr_lasso <- ifelse(pred_tr_prob_lasso >= 0.5, "M", "B")
+lasso.tr.error <- mean(pred_tr_lasso != y_tr)
+lasso.tr.error
+lasso.tr.CM <- confusionMatrix(data=as.factor(pred_tr_lasso), reference = y_tr, positive = "M")
+lasso.tr.CM
+
+pred_te_prob_lasso <- predict(fit.lasso, s = lambda_best, newx = x_te, type = "response")
+pred_te_lasso <- ifelse(pred_te_prob_lasso >= 0.5, "M", "B")
+lasso.te.error <- mean(pred_te_lasso != y_te)
+lasso.te.error
+lasso.te.CM <- confusionMatrix(data=as.factor(pred_te_lasso), reference = y_te, positive = "M")
+lasso.te.CM
+```
+
+## decision tree
+```{r decision.tree, echo=FALSE}
+library(tree)
+set.seed(0)
+
+# entropy D model building
+fit.treeD <- tree(diagnosis ~ ., data = cancer_tr)
+cv.treeD <- cv.tree(fit.treeD)
+cv.treeD.df <- data.frame(size = cv.treeD$size, deviance = cv.treeD$dev)
+best_size_D <- cv.treeD$size[which.min(cv.treeD$dev)]
+ggplot(cv.treeD.df, mapping = aes(x = size, y = deviance)) + 
+  geom_point(size = 3) + 
+  geom_line() +
+  geom_vline(xintercept = best_size_D, col = "red") +
+  ggtitle("Decision Tree CV Result Using Entropy D")
+treeD.final <- prune.tree(fit.treeD, best = best_size_D) 
+plot(treeD.final)
+text(treeD.final)
+
+# entropy D accuracy
+pred_tr_treeD <- predict(treeD.final, newdata = cancer_tr, type = "class")
+treeD.tr.error <- mean(pred_tr_treeD != y_tr)
+treeD.tr.error
+treeD.tr.CM <- confusionMatrix(data=as.factor(pred_tr_treeD), reference = y_tr, positive = "M")
+treeD.tr.CM
+
+pred_te_treeD <- predict(treeD.final, newdata = cancer_te, type = "class")
+treeD.te.error <- mean(pred_te_treeD != y_te)
+treeD.te.error
+treeD.te.CM <- confusionMatrix(data=as.factor(pred_te_treeD), reference = y_te, positive = "M")
+treeD.te.CM
+
+# Gini G
+fit.treeG <- tree(diagnosis ~ ., data = cancer_tr, split = "gini")
+cv.treeG <- cv.tree(fit.treeG)
+cv.treeG.df <- data.frame(size = cv.treeG$size, deviance = cv.treeG$dev)
+best_size_G <- cv.treeG$size[which.min(cv.treeG$dev)]
+ggplot(cv.treeG.df, mapping = aes(x = size, y = deviance)) + 
+  geom_point(size = 3) + 
+  geom_line() +
+  geom_vline(xintercept = best_size_G, col = "red") +
+  ggtitle("Decision Tree CV Result Using Gini G")
+treeG.final <- prune.tree(fit.treeG, best = best_size_G) 
+plot(treeG.final)
+text(treeG.final)
+
+# Gini G accuracy
+pred_tr_treeG <- predict(treeG.final, newdata = cancer_tr, type = "class")
+treeG.tr.error <- mean(pred_tr_treeG != y_tr)
+treeG.tr.error
+treeG.tr.CM <- confusionMatrix(data=as.factor(pred_tr_treeG), reference = y_tr, positive = "M")
+treeG.tr.CM
+
+pred_te_treeG <- predict(treeG.final, newdata = cancer_te, type = "class")
+treeG.te.error <- mean(pred_te_treeG != y_te)
+treeG.te.error
+treeG.te.CM <- confusionMatrix(data=as.factor(pred_te_treeG), reference = y_te, positive = "M")
+treeG.te.CM
+```
+
+## Bagging
+```{r bagging, include=FALSE}
+library(randomForest)
+set.seed(0)
+
+# bagging
+p <- ncol(cancer_tr)-1
+##Setting mtry = p for bagging
+bag.ahp.cla <- randomForest(diagnosis ~ ., 
+                            data = cancer_tr, 
+                            mtry = p, 
+                            importance=TRUE)
+bag.ahp.cla 
+importance(bag.ahp.cla)
+varImpPlot(bag.ahp.cla)
+
+y_bag_tr <- predict(bag.ahp.cla)
+tr_error_bagging <- mean(y_bag_tr != y_tr)
+tr_error_bagging
+bag.tr.CM <- confusionMatrix(data=as.factor(y_bag_tr), reference = y_tr, positive = "M")
+bag.tr.CM
+
+y_bag_te <- predict(bag.ahp.cla ,newdata = cancer_te)
+te_error_bagging <- mean(y_bag_te != y_te)
+te_error_bagging
+bag.te.CM <- confusionMatrix(data=as.factor(y_bag_te), reference = y_te, positive = "M")
+bag.te.CM
+```
+
+
+## random forest
+```{r RF, include=FALSE}
+set.seed(0)
+
+# model building
+fit.rf <- randomForest(diagnosis ~ ., data = cancer_tr, importance = TRUE)
+importance(fit.rf)
+varImpPlot(fit.rf)
+
+# accuracy
+pred_tr_rf <- predict(fit.rf, newdata = cancer_tr, type = "class")
+rf.tr.error <- mean(pred_tr_rf != y_tr)
+rf.tr.error
+rf.tr.CM <- confusionMatrix(data=as.factor(pred_tr_rf), reference = y_tr, positive = "M")
+rf.tr.CM
+
+pred_te_rf <- predict(fit.rf, newdata = cancer_te, type = "class")
+rf.te.error <- mean(pred_te_rf != y_te)
+rf.te.error
+rf.te.CM <- confusionMatrix(data=as.factor(pred_te_rf), reference = y_te, positive = "M")
+rf.te.CM
+```
+
+## boosting
+```{r boosting, include=FALSE}
+library(gbm)
+set.seed(0)
+
+# model building
+fit.boost <- gbm(diagnosis ~ ., data = cancer_tr, distribution = "multinomial", 
+                  n.trees = 5000, interaction.depth = 1, cv.folds = 5, shrinkage = 0.01)
+best_n_tress <- which.min(fit.boost$cv.error)
+summary(fit.boost)
+
+# accuracy
+pred_tr_prob_bst <- predict(fit.boost, newdata = cancer_tr, n.trees = best_n_tress, type = "response")
+pred_tr_bst <- levels(y_tr)[apply(pred_tr_prob_bst, 1, which.max)]
+bst.tr.error <- mean(pred_tr_bst != y_tr)
+bst.tr.error
+boost.tr.CM <- confusionMatrix(data=as.factor(pred_tr_bst), reference = y_tr, positive = "M")
+boost.tr.CM
+
+pred_te_prob_bst <- predict(fit.boost, newdata = cancer_te, n.trees = best_n_tress, type = "response")
+pred_te_bst <- levels(y_te)[apply(pred_te_prob_bst, 1, which.max)]
+bst.te.error <- mean(pred_te_bst != y_te)
+bst.te.error
+boost.te.CM <- confusionMatrix(data = as.factor(pred_te_bst), reference = y_te, positive = "M")
+boost.te.CM
+```
+
+## summary
+```{r summary, echo=FALSE}
+train.summary <- data.frame(model = c("Logistic Reg", "Lasso", "Decision Tree", 
+                                      "Bagging", "Random Forest", "Boosting"),
+           accuracy = c(logit.tr.CM$overall["Accuracy"],
+                        lasso.tr.CM$overall["Accuracy"],
+                        treeD.tr.CM$overall["Accuracy"],
+                        bag.tr.CM$overall["Accuracy"],
+                        rf.tr.CM$overall["Accuracy"],
+                        boost.tr.CM$overall["Accuracy"]),
+           error = c(logit.tr.error, lasso.tr.error, treeD.tr.error, 
+                     tr_error_bagging, rf.tr.error, bst.tr.error),
+           sensitivity = c(logit.tr.CM$byClass["Sensitivity"],
+                           lasso.tr.CM$byClass["Sensitivity"],
+                           treeD.tr.CM$byClass["Sensitivity"],
+                           bag.tr.CM$byClass["Sensitivity"],
+                           rf.tr.CM$byClass["Sensitivity"], 
+                           boost.tr.CM$byClass["Sensitivity"]),
+           specificity = c(logit.tr.CM$byClass["Sensitivity"],
+                           lasso.tr.CM$byClass["Specificity"],
+                           treeD.tr.CM$byClass["Specificity"],
+                           bag.tr.CM$byClass["Sensitivity"],
+                           rf.tr.CM$byClass["Specificity"], 
+                           boost.tr.CM$byClass["Specificity"]))  
+train.summary        
+
+test.summary <- data.frame(model = c("Logistic Reg", "Lasso", "Decision Tree", 
+                                     "Bagging", "Random Forest", "Boosting"),
+           accuracy = c(logit.te.CM$overall["Accuracy"],
+                        lasso.te.CM$overall["Accuracy"],
+                        treeD.te.CM$overall["Accuracy"],
+                        bag.te.CM$overall["Accuracy"],
+                        rf.te.CM$overall["Accuracy"],
+                        boost.te.CM$overall["Accuracy"]),
+           error = c(logit.te.error, lasso.te.error, treeD.te.error, 
+                     te_error_bagging, rf.te.error, bst.te.error),
+           sensitivity = c(logit.te.CM$byClass["Sensitivity"],
+                           lasso.te.CM$byClass["Sensitivity"],
+                           treeD.te.CM$byClass["Sensitivity"],
+                           bag.te.CM$byClass["Sensitivity"],
+                           rf.te.CM$byClass["Sensitivity"], 
+                           boost.te.CM$byClass["Sensitivity"]),
+           specificity = c(logit.te.CM$byClass["Sensitivity"],
+                           lasso.te.CM$byClass["Specificity"],
+                           treeD.te.CM$byClass["Specificity"],
+                           bag.te.CM$byClass["Sensitivity"],
+                           rf.te.CM$byClass["Specificity"], 
+                           boost.te.CM$byClass["Specificity"]))  
+test.summary
+```

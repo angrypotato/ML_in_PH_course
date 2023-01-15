@@ -1,0 +1,87 @@
+---
+title: "HW 9"
+author: "Xiaoting Chen"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+  number_sections: yes
+  df_print: paged
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warnings = FALSE, fig.align = 'center',  eval = TRUE)
+```
+
+
+You can run the following code to prepare the analysis.
+```{r, message = FALSE, warning = FALSE}
+library(r02pro)     #INSTALL IF NECESSARY
+library(tidyverse)  #INSTALL IF NECESSARY
+library(MASS)
+my_ahp <- ahp %>% dplyr::select(gar_car, liv_area, lot_area, bsmt_area, gar_area, oa_qual, sale_price, bedroom, bathroom, yr_built) %>%
+  na.omit()
+my_ahp_x <- my_ahp %>% dplyr::select(-sale_price)
+my_ahp_y <- my_ahp %>% dplyr::select(sale_price)
+```
+
+1. Conduct PCA on `my_ahp_x` with `scale = TRUE`. 
+a. Create a biplot. 
+```{r}
+pr_out <- prcomp(my_ahp_x, scale = TRUE)
+biplot(pr_out, scale = 0)
+```
+b. Plot the Proportion of Variance Explained and the Cumulative Proportion of Variance Explained. 
+```{r}
+pr_var <- pr_out$sdev^2
+pve <- pr_var / sum(pr_var)
+par(mfrow = c(1, 2))
+plot(pve, xlab = "Principal Component", 
+     ylab = "Proportion of Variance Explained", ylim = c(0, 1), type = "b")
+plot(cumsum(pve), xlab = "Principal Component", 
+     ylab = "Cumulative Proportion of Variance Explained", ylim = c(0, 1), type = "b")
+```
+
+c. Fit a linear regression of `sale_price` on the first two principle components. What's the $R^2$? 
+```{r}
+dta <- data.frame(my_ahp_y, pr_out$x[ , c(1,2)])
+lmod.pc <- lm(sale_price ~ ., dta )
+summary(lmod.pc)$r.squared
+```
+
+d. Fit a linear regression of `sale_price` on `gar_car` and `liv_area`. What's the $R^2$? 
+```{r}
+lmod <- lm(sale_price ~ gar_car + liv_area, my_ahp)
+summary(lmod)$r.squared
+```
+
+2. Conduct PCA on `my_ahp_x` with `scale = FALSE` and compare the results of a-c with those of Q1. 
+a. Create a biplot. 
+```{r, message=FALSE, warning=FALSE}
+pr_out_2 <- prcomp(my_ahp_x, scale = F)
+biplot(pr_out_2, scale = 0)
+```
+The biplot now becomes hard to interprete and doesn't provide much information.\
+
+
+b. Plot the Proportion of Variance Explained and the Cumulative Proportion of Variance Explained. 
+```{r}
+pr_var_2 <- pr_out_2$sdev^2
+pve_2 <- pr_var_2 / sum(pr_var_2)
+par(mfrow = c(1, 2))
+plot(pve_2, xlab = "Principal Component", 
+     ylab = "Proportion of Variance Explained", ylim = c(0, 1), type = "b")
+plot(cumsum(pve_2), xlab = "Principal Component", 
+     ylab = "Cumulative Proportion of Variance Explained", ylim = c(0, 1), type = "b")
+```
+The PVE of the first PC is 1, performing further PCs won't improve the model.\
+
+c. Fit a linear regression of `sale_price` on the first two principle components. What's the $R^2$? 
+```{r}
+pc_2_2 <- as.data.frame(pr_out_2$x[ , c(1,2)])
+dta_2 <- cbind(my_ahp_y, pc_2_2)
+lmod.pc_2 <- lm(sale_price ~ ., dta_2)
+summary(lmod.pc_2)$r.squared
+```
+The linear regression model now has a lower R2 than the 1c model. From the three aspects discussed above, unstandardized PCA doesn't perform as well as the standardized one.

@@ -1,0 +1,142 @@
+---
+title: "HW 5"
+author: "Xiaoting Chen"
+output:
+  pdf_document: default
+  html_document:
+    number_sections: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warnings = FALSE, fig.align = 'center',  eval = TRUE)
+```
+
+You can run the following code to prepare the analysis.
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)  #INSTALL IF NECESSARY
+n <- 300
+p <- 20
+set.seed(111)
+x <- matrix(rnorm(n*p), n, p)
+beta <- rep(0, p)
+beta[seq(1, 19, 2)] = seq(from = 0.1, to = 1, by = 0.1)
+beta
+y <- x %*% beta + rnorm(n)  
+dat <- data.frame(x = x, y = y)
+colnames(dat) <- c(paste0("x", 1:p), "y")
+tr_dat <- dat[1:(n/2), ]
+te_dat <- dat[-(1:(n/2)), ]
+```
+
+Suppose we want to build a linear regression model to predict `y`. Please answer the following questions.
+
+1. Use the training data `tr_dat` using the following methods. For each method, output its regression coefficients, and compute its test error on `te_dat`. Looking at the true regression coefficients `beta`, discuss your findings on the following methods. 
+  a. Best Subset Selection with BIC
+  b. Forward Stepwise Selection with Adjusted $R^2$
+  c. Backward Stepwise Selection with Cp
+  d. Ridge Regression with 10-fold CV
+  e. Lasso with 10-fold CV\
+
+Best Subset Selection with BIC
+```{r Q1.a, warning=FALSE}
+library(leaps)
+best_subset <- regsubsets(y ~ ., data = tr_dat, nvmax = 20)
+best_subset_sum <- summary(best_subset)
+best_ind <- which.min(best_subset_sum$bic) 
+best_coef <- coef(best_subset, best_ind)
+test_dat = te_dat %>% select(names(best_coef)[-1])
+test_pred <- cbind(1, as.matrix(test_dat)) %*% best_coef
+best_te_error <- mean((test_pred - te_dat$y)^2)
+
+best_coef
+best_te_error
+```
+The Best Subset Selection model successfully captures most true coefficients (except beta1), and about half of the estimated betas approximate the true beta. Test error equals to 1.09, which is quite good.\
+
+
+Forward Stepwise Selection with Adjusted $R^2$
+```{r Q1.b,warning=FALSE, message=FALSE}
+forward_fit <- regsubsets(y ~ ., data = tr_dat, method = "forward", nvmax = 20)
+forward_sum <- summary(forward_fit)
+forward_ind <- which.max(forward_sum$adjr2)
+forward_coef <- coef(forward_fit, forward_ind)
+test_dat = te_dat %>% select(names(forward_coef)[-1])
+test_pred <- cbind(1, as.matrix(test_dat)) %*% forward_coef
+forward_te_error <- mean((test_pred - te_dat$y)^2)
+
+forward_coef
+forward_te_error
+```
+The forward stepwise model with adjusted $R^2$ tends to include more variables, even though their true coefficient are 0. The accuracy of the estimated coefficients and test error are both not bad.\
+
+
+Backward Stepwise Selection with Cp
+```{r Q1.c,warning=FALSE, message=FALSE}
+back_fit <- regsubsets(y ~ ., data = tr_dat, method = "backward", nvmax = 20)
+back_sum <- summary(back_fit)
+back_ind <- which.min(back_sum$cp)
+back_coef <- coef(back_fit, back_ind)
+test_dat = te_dat %>% select(names(back_coef)[-1])
+test_pred <- cbind(1, as.matrix(test_dat)) %*% back_coef
+back_te_error <- mean((test_pred - te_dat$y)^2)
+
+back_coef
+back_te_error
+```
+The backward stepwise selection model with Cp successfully captures all the true coefficients with only one addition. The accuracy of the estimated coefficients and test error are both not bad.\
+
+
+Ridge Regression with 10-fold CV
+```{r Q1.d,warning=FALSE, message=FALSE}
+library(glmnet)
+library(caret)
+x_tr <- as.matrix(tr_dat[, -21])
+y_tr <- tr_dat[, 21, drop = T]
+x_te <- as.matrix(te_dat[, -21])
+y_te <- te_dat[, 21, drop = T]
+
+set.seed(0)
+fit_ridge <- cv.glmnet(x_tr, y_tr, alpha = 0) 
+ridge_coef <- coef(fit_ridge)
+te_pred <- predict(fit_ridge, newx = x_te)
+ridge_te_error <- mean((te_pred - y_te)^2)
+
+ridge_coef
+ridge_te_error
+```
+The ridge model's performance regarding removing noises is not good. All the variables have non-zero coefficients, even though some of them have true coefficients 0. This also shows that ridge models are not disperse. The test error looks OK.\
+
+
+Lasso with 10-fold CV
+```{r Q1.e,warning=FALSE, message=FALSE}
+set.seed(0)
+fit_lasso <- cv.glmnet(x_tr, y_tr, alpha = 1) 
+lasso_coef <- coef(fit_lasso)
+te_pred <- predict(fit_lasso, newx = x_te)
+lasso_te_error <- mean((te_pred - y_te)^2)
+
+lasso_coef
+lasso_te_error
+```
+The lasso model does better than ridge model in detecting noises. The accuracy of estimated coefficients is not as good as the first three models, but the test error looks OK.\
+
+
+Summary:
+```{r}
+data.frame(methods = c("Best subset", "Forward", "Backward", "Ridge", "lasso"),
+           test_error = c(best_te_error,forward_te_error,back_te_error,ridge_te_error,lasso_te_error))
+```
+
+
+2. For the Simple Special Case for Ridge Regression and Lasso, prove (6.14) and (6.15) on Page 247 of ISLRv2.\
+a. Ridge\
+![](hw5_1.jpg)\
+
+b. Lasso\
+![](hw5_2.jpg)
+![](hw5_3.jpg)
+
+
+

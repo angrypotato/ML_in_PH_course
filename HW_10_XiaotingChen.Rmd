@@ -1,0 +1,72 @@
+---
+title: "HW 10"
+author: "Xiaoting Chen"
+output:
+  pdf_document:
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warnings = FALSE, fig.align = 'center',  eval = TRUE)
+```
+
+1. Question 12.6.2 on Page 548 in ISLRv2. 
+
+![](6_2.jpg)
+
+2. Question 12.6.3 on Page 548 in ISLRv2.  
+
+![](6_3.jpg)
+![](6_3_d.jpg)
+![](6_3_e.jpg)
+![](6_3_f.jpg)
+
+3. Question 12.6.9 on Page 550 in ISLRv2.   
+Consider the USArrests data. We will now perform hierarchical clustering on the states.
+(a) Using hierarchical clustering with complete linkage and Euclidean distance, cluster the states.
+```{r}
+data(USArrests)
+hc <- hclust(dist(USArrests), method = "complete")
+plot(hc, main = "Hierarchical Clustering with Complete Linkage",
+xlab = "", sub = "", cex = .7)
+```
+
+(b) Cut the dendrogram at a height that results in three distinct clusters. Which states belong to which clusters?
+```{r}
+label <- cutree(hc, 3)
+list(cluster.1 = attributes(label[label == 1]),
+     cluster.2 = attributes(label[label == 2]),
+     cluster.3 = attributes(label[label == 3]))
+```
+
+(c) Hierarchically cluster the states using complete linkage and Euclidean distance, after scaling the variables to have standard deviation one.
+```{r}
+data("USArrests")
+dta <- scale(USArrests)
+hc_2 <- hclust(dist(dta), method = "complete")
+plot(hc_2, main = "Hierarchical Clustering with Complete Linkage after Scaling",
+xlab = "", sub = "", cex = .7)
+```
+
+(d) What effect does scaling the variables have on the hierarchical clustering obtained? In your opinion, should the variables be scaled before the inter-observation dissimilarities are computed? Provide a justification for your answer\
+
+```{r, warning=FALSE}
+library(usmap)
+library(ggplot2)
+USArrests$cluster.1 <- factor(label)
+USArrests$cluster.2 <- factor(cutree(hc_2, 3))
+USArrests$state <- tolower(rownames(USArrests))
+head(USArrests)
+
+plot_usmap(data = USArrests, values = "cluster.1") +
+  scale_fill_discrete(name = " ") +
+  ggtitle("Clusters without scaling")
+
+plot_usmap(data = USArrests, values = "cluster.2") +
+  scale_fill_discrete(name = " ") +
+  ggtitle("Clusters with scaling")
+
+```
+After scaling, the clustering shows a geographical trend, where adjacent states tend to be in the same cluster. I think the need to scale depends on the data attributes. In this case, scaling makes sense because the variables have different units, and the average values of each variable vary a lot. Intuitively, without scaling, variable `Assault` may show more importance in computation because it has larger quantity than other variables.

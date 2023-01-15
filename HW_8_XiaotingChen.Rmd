@@ -1,0 +1,42 @@
+---
+title: "HW 8"
+author: "Xiaoting Chen"
+output:
+  pdf_document:
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warnings = FALSE, fig.align = 'center',  eval = TRUE)
+```
+
+
+1. Question 10.10.1 on Page 458 in ISLRv2. \
+
+a.\
+![10_1a](10_1a.jpg)
+
+b.\
+![10_1b](10_1b.jpg)
+c.\
+![10_1c](10_1c.jpg)
+d.\
+![10_1d](10_1d.jpg)
+
+
+2. Question 10.10.2 on Page 458 in ISLRv2. \
+
+![](10_2.jpg)
+
+3. Question 10.10.3 on Page 459 in ISLRv2. \
+
+![](10_3.jpg)
+
+4. Question 10.10.5 on Page 459 in ISLRv2. \
+
+![](10_5.png)
+
+
+The orders of priority according to the smallest MAE and the largest R^2 are quite different, probably because the nature of the models and criterion. Lasso has the fewest parameters, so its predictions may be smoother and more stable compared with other models and lead to a small absolute error. However, R^2 always increase with the increase of parameter number, thus the other two models have bigger R^2. In terms of model accuracy, it is possible that the LR and NN model have higher accuracy thus outputs less smoother prediction, leading bigger absolute errors. For another side, MAE takes the first power term and R^2 takes the quadratic term, it is easily understood that a smaller sum of first power terms doesn't promise a small sum of quadratic terms. It is affected by the variance of data as well.

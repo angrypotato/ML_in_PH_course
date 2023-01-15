@@ -1,0 +1,159 @@
+---
+title: "HW 7"
+author: 'Xiaoting Chen'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+```
+
+You can run the following code to prepare the analysis.
+```{r, message=FALSE, warning=FALSE }
+library(r02pro)     #INSTALL IF NECESSARY
+library(tidyverse)  #INSTALL IF NECESSARY
+library(MASS)
+library(randomForest)
+library(gbm)
+library(tree)
+my_ahp <- ahp %>% dplyr::select(gar_car, liv_area, lot_area, oa_qual, sale_price) %>%
+  na.omit() %>%
+  mutate(type = factor(ifelse(sale_price > median(sale_price), "Expensive", "Cheap")))
+tr_ind <- 1:(nrow(my_ahp)/20)
+my_ahp_train <- my_ahp[tr_ind, ]
+my_ahp_test <- my_ahp[-tr_ind, ]
+```
+
+Suppose we want to use tree, bagging, random forest, and boosting to predict `sale_price` and `type` using variables `gar_car`, `liv_area`, `lot_area`, and `oa_qual`. Please answer the following questions.
+
+
+1. Predict `sale_price` (a continuous response) using the training data `my_ahp_train` with tree (with CV pruning), bagging, random forest, and boosting (with CV for selecting the number of trees to be used). For each method, compute the training and test MSE. 
+(For boosting, please set `n.trees = 5000, interaction.depth = 1, cv.folds = 5`)
+```{r Q1}
+form.sale <- as.formula(sale_price ~ gar_car + liv_area + lot_area + oa_qual)
+fit.mse <- function(fit, ...) {
+  train.pred <- predict(fit, newdata = my_ahp_train, ...)
+  train.mse <- mean((train.pred - my_ahp_train[["sale_price"]])^2)
+  test.pred <- predict(fit, newdata = my_ahp_test, ...)
+  test.mse <- mean((test.pred - my_ahp_test[["sale_price"]])^2)
+  data.frame(train.mse, test.mse)
+}
+
+# tree (with CV pruning)
+set.seed(0)
+tree.sale <- tree(form.sale, my_ahp_train)
+cv.sale <- cv.tree(tree.sale)
+bestsize <- cv.sale$size[which.min(cv.sale$dev)] 
+prune.sale <- prune.tree(tree.sale, best = bestsize) 
+plot(prune.sale)
+text(prune.sale, pretty=0)
+tree.mse <- fit.mse(prune.sale)
+tree.mse
+
+# bagging
+set.seed(0)
+bag.sale <- randomForest(form.sale, data = my_ahp_train, mtry = 4, importance=TRUE)
+importance(bag.sale)
+varImpPlot(bag.sale)
+bag.mse <- fit.mse(bag.sale)
+bag.mse
+
+# random forest
+set.seed(0)
+rf.sale <- randomForest(form.sale, data = my_ahp_train, importance = TRUE)
+importance(rf.sale)
+varImpPlot(rf.sale)
+rf.mse <- fit.mse(rf.sale)
+rf.mse
+
+# boosting
+set.seed(0)
+boost.sale <- gbm(form.sale, data = my_ahp_train, distribution = "gaussian", 
+                  n.trees = 5000, interaction.depth = 1, cv.folds = 5)   
+best_n_tress <- which.min(boost.sale$cv.error)
+boost.mse <- fit.mse(boost.sale, n.trees = best_n_tress)
+boost.mse
+
+rbind(tree.mse, bag.mse, rf.mse, boost.mse) %>%
+  mutate(model = c("tree", "bagging", "RF", "boosting"))
+```
+
+2. Predict `type` (a binary response) using the training data `my_ahp_train` with tree (with CV pruning), bagging, random forest, and boosting (with CV for selecting the number of trees to be used). For each method, compute the training and test classification error. 
+(For boosting, please set `n.trees = 5000, interaction.depth = 1, cv.folds = 5`)
+
+```{r Q2, warning=FALSE}
+form.type <- as.formula(type ~ gar_car + liv_area + lot_area + oa_qual)
+fit.error <- function(fit, newdata = my_ahp_train, ...) {
+  train.pred <- predict(fit, ...)
+  train.error <- mean(train.pred != my_ahp_train[["type"]])
+  test.pred <- predict(fit, newdata = my_ahp_test, ...)
+  test.error <- mean(test.pred != my_ahp_test[["type"]])
+  data.frame(train.error = train.error, test.error = test.error)
+}
+
+# tree (with CV pruning)
+set.seed(0)
+tree.type <- tree(form.type, my_ahp_train)
+cv.type <- cv.tree(tree.type)
+bestsize <- cv.type$size[which.min(cv.type$dev)] 
+prune.type <- prune.tree(tree.type, best = bestsize) 
+plot(prune.type)
+text(prune.type, pretty=0)
+tree.error <- fit.error(prune.type, type = "class")
+tree.error
+
+# bagging
+set.seed(0)
+bag.type <- randomForest(form.type, data = my_ahp_train, mtry = 4, importance=TRUE)
+importance(bag.type)
+varImpPlot(bag.type)
+bag.error <- fit.error(bag.type)
+bag.error
+
+# random forest
+set.seed(0)
+rf.type <- randomForest(form.type, data = my_ahp_train, importance = TRUE)
+importance(rf.type)
+varImpPlot(rf.type)
+rf.error <- fit.error(rf.type)
+rf.error
+
+# boosting
+set.seed(0)
+boost.type <- gbm(form.type, data = my_ahp_train, distribution = "multinomial", n.trees = 5000, interaction.depth = 1, cv.folds = 5, shrinkage = 0.2)   
+best_n_tress <- which.min(boost.type$cv.error)
+
+yprob.train <- predict(boost.type, n.trees = best_n_tress, type = "response")
+yhat.train <- levels(my_ahp_train[["type"]])[apply(yprob.train, 1, which.max)]
+train.error <- mean(yhat.train != my_ahp_train[["type"]])
+yprob.test <- predict(boost.type, newdata = my_ahp_test, n.trees = best_n_tress, type = "response")
+yhat.test <- levels(my_ahp_test[["type"]])[apply(yprob.test, 1, which.max)]
+test.error <- mean(yhat.test != my_ahp_test[["type"]])
+boost.error <- data.frame(train.error = train.error, test.error = test.error)
+boost.error
+
+rbind(tree.error, bag.error, rf.error, boost.error) %>%
+  mutate(model = c("tree", "bagging", "RF", "boosting"))
+```
+
+3. Question 8.4.2 on Page 362 in ISLRv2. \
+![](8.4.2.jpg)
+
+
+4. Question 8.4.5 on Page 362 in ISLRv2. 
+
+```{r Q4}
+est.p <- c(0.1, 0.15, 0.2, 0.2, 0.55, 0.6, 0.6, 0.65, 0.7, 0.75)
+
+# majority vote
+mean(est.p > 0.5)
+
+# based on the avg. prob
+mean(est.p)
+```
+
+Answer:\
+`mean(est.p >= 0.5) = 0.6` means more than half of the bootstrapped samples output an P(Class is Red | X) larger than 0.5, which means the output is red in this case. So based on majority vote, the final classification is `Red`.\
+The average probability of "class is red" given X is 0.45, so the final classification is `Green` under the second approach.
+
+
